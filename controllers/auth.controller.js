@@ -1,10 +1,14 @@
 const User = require("../models/user.model");
+
+const { sendVerificationEmail } = require("../config/sendgrid.service");
+
 const jwt = require("jsonwebtoken");
 const gravatar = require("gravatar");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const jimp = require("jimp");
+const uuid = require("uuid");
 
 require("dotenv").config();
 
@@ -14,41 +18,46 @@ const signup = async (req, res, next) => {
   const user = await User.findOne({ email });
 
   if (user) {
-    return res
-      .status(409)
-      .header("Content-Type", "application/json")
-      .json({
-        status: "conflict",
-        code: 409,
-        ResponseBody: {
-          message: "Email in use",
-        },
-      });
+    return res.status(409).json({
+      status: "conflict",
+      code: 409,
+      ResponseBody: {
+        message: "Email in use",
+      },
+    });
   }
+
   try {
     const avatarURL = gravatar.url(email, { s: "200", r: "pg", d: "mm" });
 
     const newUser = new User({ email, avatarURL });
+
+    const verificationToken = uuid.v4();
+
     newUser.setPassword(password);
+
+    newUser.verify = false;
+    newUser.verificationToken = verificationToken;
+
     await newUser.save();
-    res
-      .status(201)
-      .header("Content-Type", "application/json")
-      .json({
-        status: "created",
-        code: 201,
-        ResponseBody: {
-          user: {
-            email: email,
-            subscription: "starter",
-            avatarURL: avatarURL,
-          },
+
+    await sendVerificationEmail(email, newUser.verificationToken);
+    return res.status(201).json({
+      status: "created",
+      code: 201,
+      ResponseBody: {
+        user: {
+          email: email,
+          subscription: "starter",
+          avatarURL: avatarURL,
         },
-      });
+      },
+    });
   } catch (error) {
     next(error);
   }
 };
+
 const login = async (req, res, next) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email });
@@ -147,8 +156,6 @@ const getCurrent = async (req, res, next) => {
   }
 };
 
-// ==========================================================================================================
-
 const updateAvatar = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
@@ -204,10 +211,72 @@ const updateAvatar = async (req, res, next) => {
   }
 };
 
+const verifyEmail = async (req, res) => {
+  const { verificationToken } = req.params;
+
+  console.log(`Verification token received: ${verificationToken}`);
+
+  try {
+    const user = await User.findOne({ verificationToken });
+
+    if (!user) {
+      console.log("User not found with the provided token.");
+      return res.status(404).json({ message: "User not found" });
+    }
+    console.log("User found:", user);
+
+    user.verificationToken = null;
+    user.verify = true;
+    await user.save();
+
+    console.log("User updated successfully.");
+    res.status(200).json({ message: "Verification successful" });
+  } catch (error) {
+    console.error("Error during verification:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+const resendVerificationEmail = async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      message: "missing required field email",
+    });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (user.verify) {
+      return res.status(400).json({
+        message: "Verification has already been passed",
+      });
+    }
+
+    await sendVerificationEmail(email, user.verificationToken);
+
+    res.status(200).json({
+      message: "Verification email sent",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   signup,
   login,
   logout,
   getCurrent,
   updateAvatar,
+  verifyEmail,
+  resendVerificationEmail,
 };
