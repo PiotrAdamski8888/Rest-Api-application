@@ -19,15 +19,6 @@ const user = new Schema(
       enum: ["starter", "pro", "business"],
       default: "starter",
     },
-    verify: {
-      type: Boolean,
-      default: false,
-    },
-    verificationToken: {
-      type: String,
-      required: [true, "Verify token is required"],
-    },
-
     token: {
       type: String,
       default: null,
@@ -36,6 +27,20 @@ const user = new Schema(
       type: String,
       default: null,
     },
+    verify: {
+      type: Boolean,
+      default: false,
+    },
+    verificationToken: {
+      type: String,
+      required: function () {
+        return !this.verify;
+      },
+    },
+    // verificationToken: {
+    //   type: String,
+    //   required: [true, "Verify token is required"],
+    // },
   },
   {
     versionKey: false,

@@ -13,10 +13,14 @@ const connection = mongoose.connect(process.env.DATABASE_URL, {
 
 app.use(express.json());
 require("./config/passport");
+const cors = require("cors");
+app.use(cors());
 
 app.use("/api", contactRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/avatars", express.static("./public/avatars"));
+
+app.get("/favicon.ico", (req, res) => res.status(204));
 connection
   .then(() => {
     console.log("Database connection successful");
